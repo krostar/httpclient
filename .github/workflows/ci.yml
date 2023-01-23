@@ -1,0 +1,34 @@
+---
+
+name: "CI"
+on:
+  workflow_dispatch: {}
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  tests:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "cachix/install-nix-action@v18"
+        with:
+          nix_path: "nixpkgs=channel:nixos-22.11"
+      - uses: "actions/checkout@v3"
+      - name: "Print installed nixpkgs version"
+        run: "nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'"
+      - name: "Print flake metadata"
+        run: "nix flake metadata"
+      - name: "Setup shell"
+        run: "nix develop --command true"
+      - name: "Run go unit tests"
+        run: "nix develop --command go test -v -race -count=1 ./..."
+      - name: "Lint go files"
+        run: "nix develop --command golangci-lint run --verbose"
+      - name: "Lint shell files"
+        run: "nix develop --command shellcheck **/*.sh"
+      - name: "Lint yaml files"
+        run: "nix develop --command yamllint --config-file .yamllint.yml ."
+
+...
