@@ -1,7 +1,7 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:krostar/nixpkgs/gci";
+    nixpkgs.url = "github:NixOS/nixpkgs/ca7455728c01bc198b14a37fa5e06d2e765fd2d6";
   };
 
   outputs = {
