@@ -268,6 +268,13 @@ func Test_RequestBuilder_Request(t *testing.T) {
 
 	t.Run("ko", func(t *testing.T) {
 		t.Run("with body to serialize", func(t *testing.T) {
+			t.Run("invalid url", func(t *testing.T) {
+				requestBuilder := NewRequest(http.MethodPost, "\\:/\\")
+				requestBuilt, err := requestBuilder.Request(context.Background())
+				assert.ErrorContains(t, err, "unable to parse endpoint url")
+				assert.Check(t, requestBuilt == nil)
+			})
+
 			t.Run("with body", func(t *testing.T) {
 				requestBuilder := NewRequest(http.MethodPost, "http://localhost")
 				requestBuilder.body = strings.NewReader("hello world")

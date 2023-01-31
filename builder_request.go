@@ -23,7 +23,7 @@ func NewRequest(method, endpoint string) *RequestBuilder {
 
 	endpointURL, err := url.Parse(endpoint)
 	if err != nil {
-		builder.builderError = fmt.Errorf("unable to parse endpoint url %q: %v", endpointURL, err)
+		builder.builderError = fmt.Errorf("unable to parse endpoint url %q: %v", endpoint, err)
 	} else {
 		builder.url = *endpointURL
 	}
@@ -159,6 +159,10 @@ func (b *RequestBuilder) Send(body io.Reader) *RequestBuilder {
 
 // Request builds the request.
 func (b *RequestBuilder) Request(ctx context.Context) (*http.Request, error) {
+	if b.builderError != nil {
+		return nil, b.builderError
+	}
+
 	if b.bodyToMarshal != nil {
 		if b.body != nil {
 			return nil, errors.New("body to marshal is set but body is already set")
