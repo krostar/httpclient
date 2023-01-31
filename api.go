@@ -29,6 +29,27 @@ func NewAPI(client Doer, serverAddress url.URL) *API {
 	}
 }
 
+// Clone returns a deep clone of the original API.
+func (api *API) Clone() *API {
+	clone := &API{
+		client:                           api.client,
+		serverAddress:                    *api.URL(""),
+		defaultRequestHeaders:            make(http.Header),
+		defaultResponseHandlers:          make(map[int]ResponseHandler),
+		defaultResponseBodySizeReadLimit: api.defaultResponseBodySizeReadLimit,
+	}
+
+	for key, value := range api.defaultRequestHeaders {
+		clone.defaultRequestHeaders[key] = value
+	}
+
+	for key, value := range api.defaultResponseHandlers {
+		clone.defaultResponseHandlers[key] = value
+	}
+
+	return clone
+}
+
 // WithRequestHeaders sets headers that will be sent to each request.
 func (api *API) WithRequestHeaders(headers http.Header) *API {
 	for key, value := range headers {

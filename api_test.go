@@ -32,6 +32,34 @@ func Test_NewAPI(t *testing.T) {
 	}, gocmp.AllowUnexported(API{})))
 }
 
+func Test_API_Clone(t *testing.T) {
+	original := &API{
+		client: http.DefaultClient,
+		serverAddress: url.URL{
+			Scheme: "http",
+			User:   url.UserPassword("foo", "bar"),
+			Host:   "localhost",
+			Path:   "/foo",
+		},
+		defaultRequestHeaders:            map[string][]string{"hello": {"world"}},
+		defaultResponseHandlers:          map[int]ResponseHandler{503: func(*http.Response) error { return nil }},
+		defaultResponseBodySizeReadLimit: 58968,
+	}
+	clone := original.Clone()
+
+	assert.Check(t, cmp.DeepEqual(original, clone, // object are deeply equal
+		gocmp.AllowUnexported(API{}, url.Userinfo{}),
+		gocmp.FilterPath(
+			func(path gocmp.Path) bool { return path.GoString() == "{*httpclient.API}.defaultResponseHandlers[503]" },
+			gocmp.Comparer(func(a, b ResponseHandler) bool { return a != nil && b != nil }),
+		),
+	))
+	assert.Check(t, original != clone)                                                   // but pointers must be different
+	assert.Check(t, &original.defaultRequestHeaders != &clone.defaultRequestHeaders)     // same for maps
+	assert.Check(t, &original.defaultResponseHandlers != &clone.defaultResponseHandlers) // same for maps
+	assert.Check(t, original.serverAddress.User != clone.serverAddress.User)             // same for url attributes that also are pointers
+}
+
 func Test_API_URL(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		api := NewAPI(http.DefaultClient, url.URL{
