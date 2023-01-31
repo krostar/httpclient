@@ -217,11 +217,26 @@ func Test_RequestBuilder_Send(t *testing.T) {
 	assert.Check(t, req.header.Get("Content-Type") == "application/octet-stream")
 }
 
+func Test_RequestBuilder_SetOverrideFunc(t *testing.T) {
+	req := NewRequest(http.MethodGet, "http://localhost/localhost")
+	assert.Check(t, req.overrideFunc == nil)
+	req = req.SetOverrideFunc(func(req *http.Request) (*http.Request, error) {
+		return nil, errors.New("boom")
+	})
+	assert.Check(t, req.overrideFunc != nil)
+}
+
 func Test_RequestBuilder_Request(t *testing.T) {
+	type ctxKey string
+
 	t.Run("ok", func(t *testing.T) {
 		t.Run("without body", func(t *testing.T) {
 			requestBuilder := NewRequest(http.MethodGet, "http://localhost")
 			requestBuilder = requestBuilder.AddHeader("hello", "world")
+			requestBuilder = requestBuilder.SetOverrideFunc(func(req *http.Request) (*http.Request, error) {
+				ctx := context.WithValue(context.Background(), ctxKey("key"), "value")
+				return req.WithContext(ctx), nil
+			})
 			requestBuilt, err := requestBuilder.Request(context.Background())
 			assert.NilError(t, err)
 			assert.Check(t, compareHTTPRequestFunc(requestBuilt,
@@ -231,6 +246,7 @@ func Test_RequestBuilder_Request(t *testing.T) {
 					},
 				)),
 			)
+			assert.Check(t, requestBuilt.Context().Value(ctxKey("key")).(string) == "value")
 		})
 
 		t.Run("with body", func(t *testing.T) {
@@ -309,6 +325,18 @@ func Test_RequestBuilder_Request(t *testing.T) {
 			requestBuilder := NewRequest(`\`, "http://localhost")
 			requestBuilt, err := requestBuilder.Request(context.Background())
 			assert.ErrorContains(t, err, "unable to create request \\ http://localhost: net/http: invalid method")
+			assert.Check(t, requestBuilt == nil)
+		})
+
+		t.Run("unable to override request", func(t *testing.T) {
+			anError := errors.New("boom")
+			requestBuilder := NewRequest(http.MethodPost, "http://localhost")
+			requestBuilder = requestBuilder.SetOverrideFunc(func(*http.Request) (*http.Request, error) {
+				return nil, anError
+			})
+			requestBuilt, err := requestBuilder.Request(context.Background())
+			assert.ErrorIs(t, err, anError)
+			assert.ErrorContains(t, err, "unable to override request: boom")
 			assert.Check(t, requestBuilt == nil)
 		})
 	})

@@ -13,6 +13,7 @@ type API struct {
 	serverAddress url.URL
 
 	defaultRequestHeaders            http.Header
+	defaultRequestOverrideFunc       RequestOverrideFunc
 	defaultResponseHandlers          ResponseStatusHandlers
 	defaultResponseBodySizeReadLimit int64
 }
@@ -48,6 +49,12 @@ func (api *API) Clone() *API {
 	}
 
 	return clone
+}
+
+// WithRequestOverrideFunc sets a function that allow each requests to be overridden.
+func (api *API) WithRequestOverrideFunc(overrideFunc RequestOverrideFunc) *API {
+	api.defaultRequestOverrideFunc = overrideFunc
+	return api
 }
 
 // WithRequestHeaders sets headers that will be sent to each request.
@@ -89,32 +96,50 @@ func (api *API) URL(endpoint string) *url.URL {
 
 // Head creates a HEAD request builder.
 func (api *API) Head(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodHead, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodHead, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Get creates a GET request builder.
 func (api *API) Get(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodGet, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodGet, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Post creates a POST request builder.
 func (api *API) Post(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodPost, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodPost, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Put creates a PUT request builder.
 func (api *API) Put(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodPut, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodPut, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Patch creates a PATCH request builder.
 func (api *API) Patch(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodPatch, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodPatch, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Delete creates a DELETE request builder.
 func (api *API) Delete(endpoint string) *RequestBuilder {
-	return NewRequest(http.MethodDelete, api.URL(endpoint).String()).Client(api.client).SetHeaders(api.defaultRequestHeaders)
+	return NewRequest(http.MethodDelete, api.URL(endpoint).String()).
+		Client(api.client).
+		SetHeaders(api.defaultRequestHeaders).
+		SetOverrideFunc(api.defaultRequestOverrideFunc)
 }
 
 // Do performs the requests and returns a response builder.

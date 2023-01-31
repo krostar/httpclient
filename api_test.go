@@ -84,6 +84,8 @@ func Test_API_URL(t *testing.T) {
 }
 
 func Test_API_Method(t *testing.T) {
+	type ctxKey string
+
 	httpServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		assert.Check(t, r.URL.Path == "/foo/bar")
 		rw.Header().Set("hello", r.Header.Get("hello"))
@@ -94,7 +96,11 @@ func Test_API_Method(t *testing.T) {
 	httpServerURL, err := url.Parse(httpServer.URL)
 	assert.NilError(t, err)
 
-	api := NewAPI(httpServer.Client(), *httpServerURL).WithRequestHeaders(http.Header{"hello": []string{"world"}})
+	api := NewAPI(httpServer.Client(), *httpServerURL).
+		WithRequestHeaders(http.Header{"hello": []string{"world"}}).
+		WithRequestOverrideFunc(func(req *http.Request) (*http.Request, error) {
+			return req.WithContext(context.WithValue(req.Context(), ctxKey("key"), "value")), nil
+		})
 
 	for httpMethod, apiMethod := range map[string]func(string) *RequestBuilder{
 		http.MethodHead:   api.Head,
@@ -116,6 +122,7 @@ func Test_API_Method(t *testing.T) {
 					OnStatus(http.StatusOK, func(resp *http.Response) error {
 						assert.Check(t, resp.Header.Get("hello") == "world", "header 'hello' should be set by default")
 						assert.Check(t, resp.Header.Get("method") == httpMethod)
+						assert.Check(t, resp.Request.Context().Value(ctxKey("key")).(string) == "value")
 						return nil
 					}).
 					Error(),
@@ -136,6 +143,22 @@ func Test_API_Method(t *testing.T) {
 						Do(context.Background(), apiMethod("/foo/bar").SetHeader("hello", "notworld")).
 						OnStatus(http.StatusOK, func(resp *http.Response) error {
 							assert.Check(t, resp.Header.Get("hello") == "notworld", "header 'hello' should have been overridden")
+							return nil
+						}).
+						Error(),
+					)
+				})
+
+				t.Run("request override func should be overridable", func(t *testing.T) {
+					assert.NilError(t, api.
+						Clone().
+						Do(context.Background(), apiMethod("/foo/bar").
+							SetOverrideFunc(func(req *http.Request) (*http.Request, error) {
+								return req.WithContext(context.WithValue(req.Context(), ctxKey("key"), "notvalue")), nil
+							}),
+						).
+						OnStatus(http.StatusOK, func(resp *http.Response) error {
+							assert.Check(t, resp.Request.Context().Value(ctxKey("key")).(string) == "notvalue")
 							return nil
 						}).
 						Error(),

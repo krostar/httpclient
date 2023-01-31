@@ -43,7 +43,12 @@ type RequestBuilder struct {
 	body          io.Reader
 	bodyToMarshal any
 	bodyMarshaler func(any) ([]byte, error)
+
+	overrideFunc RequestOverrideFunc
 }
+
+// RequestOverrideFunc defines the signature to override a request.
+type RequestOverrideFunc func(req *http.Request) (*http.Request, error)
 
 // Client overrides the default http client with the provided one.
 func (b *RequestBuilder) Client(client Doer) *RequestBuilder {
@@ -157,6 +162,12 @@ func (b *RequestBuilder) Send(body io.Reader) *RequestBuilder {
 	return b
 }
 
+// SetOverrideFunc sets a function to be called that allow the request to be overridden.
+func (b *RequestBuilder) SetOverrideFunc(overrideFunc RequestOverrideFunc) *RequestBuilder {
+	b.overrideFunc = overrideFunc
+	return b
+}
+
 // Request builds the request.
 func (b *RequestBuilder) Request(ctx context.Context) (*http.Request, error) {
 	if b.builderError != nil {
@@ -187,6 +198,12 @@ func (b *RequestBuilder) Request(ctx context.Context) (*http.Request, error) {
 
 	for header, value := range b.header {
 		req.Header[header] = value
+	}
+
+	if b.overrideFunc != nil {
+		if req, err = b.overrideFunc(req); err != nil {
+			return nil, fmt.Errorf("unable to override request: %w", err)
+		}
 	}
 
 	return req, nil
