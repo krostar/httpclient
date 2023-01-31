@@ -14,9 +14,9 @@ type Client struct {
 
 func New(serverURL url.URL) (*Client, error) {
 	api := httpclient.NewAPI(http.DefaultClient, serverURL)                                                       // use serverURL as base path
-	api = api.WithResponseHandler(http.StatusUnauthorized, func(*http.Response) error { return ErrUnauthorized }) // set default response
-	api = api.WithResponseHandler(http.StatusNotFound, func(*http.Response) error { return ErrUserNotFound })     // set default response
-	api = api.WithResponseHandler(http.StatusOK, func(*http.Response) error { return nil })                       // set default response
+	api = api.WithResponseHandler(http.StatusUnauthorized, func(*http.Response) error { return ErrUnauthorized }) // set default response for status 401
+	api = api.WithResponseHandler(http.StatusNotFound, func(*http.Response) error { return ErrUserNotFound })     // set default response for status 404
+	api = api.WithResponseHandler(http.StatusOK, func(*http.Response) error { return nil })                       // set default response for status 200
 	return &Client{api: api}, nil
 }
 

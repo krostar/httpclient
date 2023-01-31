@@ -17,7 +17,7 @@ func Test_NewAPI(t *testing.T) {
 	assert.Check(t, cmp.DeepEqual(api, &API{
 		client:                           nil,
 		serverAddress:                    url.URL{},
-		defaultRequestHeaders:            nil,
+		defaultRequestHeaders:            make(http.Header),
 		defaultResponseHandlers:          make(ResponseStatusHandlers),
 		defaultResponseBodySizeReadLimit: 65536,
 	}, gocmp.AllowUnexported(API{})))
@@ -26,7 +26,7 @@ func Test_NewAPI(t *testing.T) {
 	assert.Check(t, cmp.DeepEqual(api, &API{
 		client:                           http.DefaultClient,
 		serverAddress:                    url.URL{Scheme: "http", Host: "localhost"},
-		defaultRequestHeaders:            nil,
+		defaultRequestHeaders:            make(http.Header),
 		defaultResponseHandlers:          make(ResponseStatusHandlers),
 		defaultResponseBodySizeReadLimit: 65536,
 	}, gocmp.AllowUnexported(API{})))

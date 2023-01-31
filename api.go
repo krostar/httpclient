@@ -23,6 +23,7 @@ func NewAPI(client Doer, serverAddress url.URL) *API {
 	return &API{
 		client:                           client,
 		serverAddress:                    serverAddress,
+		defaultRequestHeaders:            make(http.Header),
 		defaultResponseHandlers:          make(map[int]ResponseHandler),
 		defaultResponseBodySizeReadLimit: 1 << 16, //nolint:gomnd // 64ko
 	}
@@ -30,7 +31,9 @@ func NewAPI(client Doer, serverAddress url.URL) *API {
 
 // WithRequestHeaders sets headers that will be sent to each request.
 func (api *API) WithRequestHeaders(headers http.Header) *API {
-	api.defaultRequestHeaders = headers
+	for key, value := range headers {
+		api.defaultRequestHeaders[key] = value
+	}
 	return api
 }
 
