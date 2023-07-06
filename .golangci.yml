@@ -12,10 +12,18 @@ issues:
 
 linters-settings:
   depguard:
-    list-type: "denylist"
-    packages-with-error-message:
-      - github.com/stretchr/testify/require: "testing is done using gotest.tools/v3/assert"
-      - github.com/stretchr/testify/assert: "testing is done using gotest.tools/v3/assert"
+    rules:
+      all:
+        deny:
+          - pkg: "reflect"
+            desc: "by default reflect import is prohibited due to the high level of complexity it brings into the code"
+          - pkg: "github.com/pkg/errors"
+            desc: "use go1.13 errors"
+      test:
+        files: ["$test"]
+        deny:
+          - pkg: "github.com/stretchr/testify"
+            desc: "testing should be done using gotest.tools/v3/assert"
   errcheck:
     check-blank: true
     exclude-functions:
@@ -70,61 +78,40 @@ linters-settings:
   nolintlint:
     require-explanation: true
     require-specific: true
+  reassign:
+    patterns: [".*"]
   revive:
+    enable-all-rules: true
     rules:
-      - name: "atomic"
-      - name: "bare-return"
-      - name: "blank-imports"
-      - name: "bool-literal-in-expr"
-      - name: "call-to-gc"
-      - name: "constant-logical-expr"
-      - name: "context-as-argument"
-      - name: "context-keys-type"
-      - name: "datarace"
-      - name: "deep-exit"
+      - name: "add-constant"
+        disabled: true
+      - name: "banned-characters"
+        disabled: true
+      - name: "cognitive-complexity"
+        disabled: true
+      - name: "cyclomatic"
+        disabled: true
+      - name: "file-header"
+        disabled: true
+      - name: "flag-parameter"
+        disabled: true
+      - name: "function-length"
+        disabled: true
+      - name: "imports-blacklist"
+        disabled: true
+      - name: "line-length-limit"
+        disabled: true
+      - name: "max-public-structs"
+        disabled: true
+      - name: "package-comments"
+        disabled: true
+      - name: "argument-limit"
+        disabled: true
       - name: "defer"
-      - name: "defer"
-      - name: "defer"
-      - name: "dot-imports"
-      - name: "duplicated-imports"
-      - name: "early-return"
-      - name: "empty-block"
-      - name: "empty-lines"
-      - name: "error-naming"
-      - name: "error-return"
-      - name: "error-strings"
-      - name: "errorf"
-      - name: "exported"
-      - name: "get-return"
-      - name: "identical-branches"
-      - name: "if-return"
-      - name: "import-shadowing"
-      - name: "increment-decrement"
-      - name: "indent-error-flow"
-      - name: "modifies-parameter"
-      - name: "modifies-value-receiver"
-      - name: "optimize-operands-order"
-      - name: "range"
-      - name: "range-val-address"
-      - name: "range-val-in-closure"
-      - name: "receiver-naming"
-      - name: "redefines-builtin-id"
-      - name: "string-of-int"
-      - name: "struct-tag"
-      - name: "superfluous-else"
-      - name: "time-equal"
-      - name: "time-naming"
-      - name: "unconditional-recursion"
-      - name: "unexported-naming"
-      - name: "unexported-return"
-      - name: "unnecessary-stmt"
-      - name: "unreachable-code"
-      - name: "unused-parameter"
-      - name: "unused-receiver"
-      - name: "useless-break"
-      - name: "var-declaration"
-      - name: "var-naming"
-      - name: "waitgroup-by-value"
+        arguments:
+          - ["call-chain", "loop", "recover", "immediate-recover", "return"]
+      - name: "function-result-limit"
+        arguments: [3]
   stylecheck:
     checks: ["all", "-ST1000", "ST1020", "ST1021", "ST1022"]
   tagliatelle:
@@ -136,62 +123,47 @@ linters-settings:
     multi-func: true
 
 linters:
-  disable-all: true
-  enable:
-    - "asciicheck"
-    - "bidichk"
-    - "containedctx"
-    - "contextcheck"
-    - "depguard"
-    - "dupl"
-    - "dupword"
-    - "durationcheck"
-    - "errcheck"
-    - "errchkjson"
-    - "errname"
-    - "errorlint"
-    - "execinquery"
-    - "exhaustive"
-    - "exportloopref"
-    - "gci"
-    - "gochecknoglobals"
-    - "gochecknoinits"
-    - "goconst"
-    - "gocritic"
-    - "godot"
-    - "godox"
-    - "gofumpt"
-    - "gomnd"
-    - "goprintffuncname"
-    - "gosec"
-    - "gosimple"
-    - "govet"
-    - "grouper"
-    - "importas"
-    - "ineffassign"
-    - "interfacebloat"
-    - "misspell"
-    - "nakedret"
-    - "nestif"
-    - "nilerr"
-    - "nilnil"
-    - "noctx"
-    - "nolintlint"
-    - "nonamedreturns"
-    - "nosprintfhostport"
-    - "predeclared"
-    - "revive"
-    - "staticcheck"
-    - "stylecheck"
-    - "tagliatelle"
-    - "tenv"
-    - "testableexamples"
-    - "typecheck"
-    - "unconvert"
-    - "unparam"
-    - "unused"
-    - "usestdlibvars"
-    - "whitespace"
+  enable-all: true
+  disable:
+    - "bodyclose"
+    - "cyclop"
+    - "deadcode"
+    - "decorder"
+    - "dogsled"
+    - "exhaustivestruct"
+    - "exhaustruct"
+    - "forbidigo"
+    - "forcetypeassert"
+    - "funlen"
+    - "ginkgolinter"
+    - "gocognit"
+    - "gocyclo"
+    - "goerr113"
+    - "goheader"
+    - "golint"
+    - "ifshort"
+    - "interfacer"
+    - "ireturn"
+    - "lll"
+    - "loggercheck"
+    - "maintidx"
+    - "makezero"
+    - "maligned"
+    - "nlreturn"
+    - "nosnakecase"
+    - "paralleltest"
+    - "prealloc"
+    - "promlinter"
+    - "scopelint"
+    - "structcheck"
+    - "testpackage"
+    - "thelper"
+    - "tparallel"
+    - "varcheck"
+    - "varnamelen"
+    - "wrapcheck"
+    - "wsl"
+    - "zerologlint"
 
 run:
   skip-dirs:

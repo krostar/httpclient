@@ -1,20 +1,17 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs.url = "github:NixOS/nixpkgs/ca7455728c01bc198b14a37fa5e06d2e765fd2d6";
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
   outputs = {
-    self,
     flake-utils,
-    nixpkgs,
+    nixpkgs-unstable,
     ...
   }:
-    flake-utils.lib.eachSystem (flake-utils.lib.defaultSystems ++ [flake-utils.lib.system.x86_64-darwin]) (
+    flake-utils.lib.eachDefaultSystem (
       system: let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
+        pkgs = import nixpkgs-unstable {inherit system;};
       in {
         devShells.default = import ./shell.nix {inherit pkgs;};
       }

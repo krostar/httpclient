@@ -181,11 +181,13 @@ func compareHTTPResponseFunc(x, y *http.Response) cmp.Comparison {
 
 type doerSpy struct {
 	doer  Doer
-	calls []struct {
-		req  *http.Request
-		resp *http.Response
-		err  error
-	}
+	calls []doerSpyCall
+}
+
+type doerSpyCall struct {
+	req  *http.Request
+	resp *http.Response
+	err  error //nolint: unused // it is not used, but it still makes sens to keep it
 }
 
 func (spy *doerSpy) Do(req *http.Request) (*http.Response, error) {
@@ -194,19 +196,18 @@ func (spy *doerSpy) Do(req *http.Request) (*http.Response, error) {
 		err  error
 	)
 
-	defer func() {
-		spy.calls = append(spy.calls, struct {
-			req  *http.Request
-			resp *http.Response
-			err  error
-		}{
-			req:  req,
-			resp: resp,
-			err:  err,
-		})
-	}()
-
 	resp, err = spy.doer.Do(req)
+
+	spy.calls = append(spy.calls, struct {
+		req  *http.Request
+		resp *http.Response
+		err  error
+	}{
+		req:  req,
+		resp: resp,
+		err:  err,
+	})
+
 	return resp, err
 }
 
