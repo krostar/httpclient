@@ -1,0 +1,49 @@
+---
+name: "Quality"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_call: {}
+  workflow_dispatch: {}
+
+env:
+  GITHUB_COM_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+permissions:
+  contents: "read"
+
+jobs:
+  ci:
+    name: "Quality Checks (lint and test)"
+    permissions:
+      actions: "write"
+      contents: "read"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 10
+    steps:
+      - uses: "nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9" # v33
+      - uses: "nix-community/cache-nix-action@135667ec418502fa5a3598af6fb9eb733888ce6a" # v6
+        with:
+          primary-key: "cache-nix-store-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}"
+          restore-prefixes-first-match: "cache-nix-store-${{ runner.os }}-"
+          gc-max-store-size-linux: 1073741824 # 1go
+          purge: true
+          purge-prefixes: "cache-nix-store-${{ runner.os }}-"
+          purge-created: 0
+          purge-primary-key: "never"
+      - uses: "cachix/cachix-action@0fc020193b5a1fa3ac4575aa3a7d3aa6a35435ad" # v16
+        with:
+          name: "krostar"
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8" # v5
+      - name: "Print nix version"
+        run: "nix --version"
+      - name: "Print flake metadata"
+        run: "nix flake metadata"
+      - name: "Setup shell"
+        run: "nix develop --command true"
+      - name: "Just CI"
+        run: "nix develop --command just ci"

@@ -7,8 +7,24 @@ import (
 	"sync"
 )
 
-// NewDoerStub returns a new stubbed Doer.
-// See DoerStubCall for how to configure calls.
+// DoerStub implements httpclient.Doer and returns pre-configured responses
+// without making actual HTTP requests. Useful for controlling exact responses
+// or testing error conditions.
+//
+// Two modes: strict order (exact consumption order) or flexible order (first match).
+// Safe for concurrent use.
+type DoerStub struct {
+	m           sync.Mutex
+	strictOrder bool
+	calls       []DoerStubCall
+}
+
+// NewDoerStub creates DoerStub with provided call configurations.
+// Calls slice defines responses for matching requests.
+//
+// If strictOrder is true, calls consumed in exact order, non-matches error.
+// If false, first matching call (or no matcher) used and consumed.
+// See DoerStubCall for configuring individual responses.
 func NewDoerStub(calls []DoerStubCall, strictOrder bool) *DoerStub {
 	copied := make([]DoerStubCall, len(calls))
 	copy(copied, calls)
@@ -18,20 +34,21 @@ func NewDoerStub(calls []DoerStubCall, strictOrder bool) *DoerStub {
 	}
 }
 
-// DoerStub implements Doer and returns pre-configured calls.
-// It is safe to call it concurrently.
-type DoerStub struct {
-	m           sync.Mutex
-	strictOrder bool
-	calls       []DoerStubCall
-}
-
-// Do wraps the underlying doer call and returns pre-configured responses.
-// If strictOrder is true, Doer will go through each configured calls in order
-// and if the request matcher is set and don't match the request, an error will be returned.
-// Otherwise, if strictOrder is false, Doer will go through each configured calls in order
-// but if the request matcher is set and don't match the request, the call will be skipped and the next will be tried.
-// If no calls are remaining, or if structOrder is false and no call match, an error will be returned.
+// Do implements httpclient.Doer by returning pre-configured responses based on
+// the configured DoerStubCall slice. The behavior depends on the strictOrder setting:
+//
+// In strict order mode (strictOrder=true):
+//   - calls are processed in the exact order they were configured
+//   - if a call has a RequestMatcher and the request doesn't match, an error is returned
+//   - if a call has no RequestMatcher, it matches any request
+//
+// In flexible order mode (strictOrder=false):
+//   - calls are searched in order until a matching one is found
+//   - non-matching calls are skipped
+//   - the first matching call (or call without a matcher) is used and consumed
+//
+// Returns an error if no configured calls remain or if no call matches the request.
+// This method is safe for concurrent use.
 func (d *DoerStub) Do(req *http.Request) (*http.Response, error) {
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -44,14 +61,16 @@ func (d *DoerStub) Do(req *http.Request) (*http.Response, error) {
 			break
 		}
 
-		if err := call.Matcher.MatchRequest(req); err == nil {
-			idx = i
-			break
-		} else if d.strictOrder {
-			return nil, fmt.Errorf("request does not match: %v", err)
-		} else {
+		if err := call.Matcher.MatchRequest(req); err != nil {
+			if d.strictOrder {
+				return nil, fmt.Errorf("request does not match: %v", err)
+			}
 			continue
 		}
+
+		idx = i
+
+		break
 	}
 
 	if idx == -1 {
@@ -64,7 +83,10 @@ func (d *DoerStub) Do(req *http.Request) (*http.Response, error) {
 	return call.Response, call.Error
 }
 
-// RemainingCalls returns calls that were not made but configured.
+// RemainingCalls returns a copy of all DoerStubCall configurations that have
+// not yet been consumed by calls to Do. This is useful in tests to verify
+// that all expected HTTP calls were actually made. The returned slice is a
+// copy and safe to modify. This method is safe for concurrent use.
 func (d *DoerStub) RemainingCalls() []DoerStubCall {
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -74,9 +96,13 @@ func (d *DoerStub) RemainingCalls() []DoerStubCall {
 	return calls
 }
 
-// DoerStubCall define the configuration of a call.
-// If a matcher is not set, the duo 'response,error' will be returned regardless of the request.
-// Otherwise, the request will be checked against matcher and duo 'response,error' will be returned only if the request match.
+// DoerStubCall defines the configuration for a single stubbed HTTP call.
+// It consists of an optional RequestMatcher to determine if an incoming request
+// should use this configuration, and a Response/Error pair to return.
+//
+// If Matcher is nil, this call configuration will match any request.
+// If Matcher is set, the incoming request must pass all the matcher's
+// assertions for this configuration to be used.
 type DoerStubCall struct {
 	Matcher RequestMatcher
 

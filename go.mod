@@ -1,10 +1,14 @@
 module github.com/krostar/httpclient
 
-go 1.19
+go 1.24.0
 
 require (
-	github.com/google/go-cmp v0.5.9
-	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20230116083435-1de6713980de
-	gotest.tools/v3 v3.4.0
+	github.com/google/go-cmp v0.7.0
+	github.com/krostar/test v1.0.1
+)
+
+require (
+	golang.org/x/mod v0.27.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 )

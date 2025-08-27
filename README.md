@@ -6,220 +6,260 @@
 
 # httpclient
 
-This package offers an easy way of building http request and handling http responses.
+A minimalist, fluent HTTP client Go library that simplifies request creation and response handling through builder patterns.
 
-The main goal is to simplify the amount of code required to perform simple and complex http request, which reduce development time, ease maintenance and tests.
+## Overview
 
-## Example 1: an easy one
+This package provides a chainable API that reduces boilerplate code while maintaining type safety. It makes HTTP client code more readable and testable by offering:
 
-Say we want to perform a **POST** request to **example.com** on **/users/** to create a user using its email in the json body.
-This endpoint would return a **201 Created** if the creation succeeded, or an error status, with a special **401 Unauthorized** to catch.
+- **Fluent Interface**: Chain method calls for readable request building.
+- **Type Safety**: Compile-time checks for request/response handling.
+- **Testing Support**: Built-in utilities for mocking and testing HTTP interactions.
+- **Flexibility**: Works with any HTTP client implementing the `Doer` interface.
 
-### the classic way using standard library
+## Installation
+
+```bash
+go get github.com/krostar/httpclient
+```
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/krostar/httpclient"
+)
+
+func main() {
+    var user User
+    err := httpclient.NewRequest("GET", "https://api.example.com/users/123").
+        Do(context.Background()).
+        ReceiveJSON(200, &user).
+        Error()
+
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Printf("User: %+v\n", user)
+}
+```
+
+## Core Concepts
+
+- **RequestBuilder**: provides a fluent interface for constructing HTTP requests.
+- **ResponseBuilder**: handles HTTP responses with status-specific logic.
+- **API**: provides request defaults and reusable configuration.
+
+## Examples
+
+### Simple GET Request
+
+Fetch a user by ID:
+
+```go
+var user User
+err := httpclient.NewRequest("GET", "https://api.example.com/users/123").
+    Do(ctx).
+    ReceiveJSON(200, &user).
+    Error()
+```
+
+### POST with JSON
+
+Create a new user:
+
+```go
+newUser := CreateUserRequest{Name: "John", Email: "john@example.com"}
+var response CreateUserResponse
+
+err := httpclient.NewRequest("POST", "https://api.example.com/users").
+    SendJSON(&newUser).
+    Do(ctx).
+    ReceiveJSON(201, &response).
+    Error()
+```
+
+### Complex Request with Error Handling
+
+A more comprehensive example showing headers, query parameters, and error handling:
+
+```go
+var users []User
+err := httpclient.NewRequest("GET", "https://api.example.com/users").
+    SetHeader("Authorization", "Bearer "+token).
+    SetHeader("User-Agent", "MyApp/1.0").
+    SetQueryParam("page", "1").
+    SetQueryParam("limit", "10").
+    Do(ctx).
+    ReceiveJSON(200, &users).
+    SuccessOnStatus(304). // 304 Not Modified is also success
+    ErrorOnStatus(401, ErrUnauthorized).
+    ErrorOnStatus(403, ErrForbidden).
+    ErrorOnStatus(429, ErrRateLimited).
+    Error()
+```
+
+### Using the API Type
+
+For applications making multiple requests to the same service, use the `API` type to reduce duplication:
+
+```go
+// Create reusable API client
+api := httpclient.NewAPI(http.DefaultClient, url.URL{
+    Scheme: "https",
+    Host:   "api.example.com",
+}).
+    WithRequestHeaders(http.Header{
+        "Authorization": []string{"Bearer " + token},
+        "User-Agent":    []string{"MyApp/1.0"},
+    }).
+    WithResponseHandler(401, func(resp *http.Response) error {
+        return ErrUnauthorized
+    }).
+    WithResponseBodySizeReadLimit(1024 * 1024) // 1MB limit
+
+// Use the API for multiple requests
+var user User
+err := api.Do(ctx, api.Get("/users/123")).
+    ReceiveJSON(200, &user).
+    Error()
+
+var users []User
+err = api.Do(ctx, api.Get("/users").
+    SetQueryParam("page", "1")).
+    ReceiveJSON(200, &users).
+    Error()
+```
+
+## Testing
+
+The `httpclienttest` package provides utilities for testing HTTP client code (`DoerStub`, `DoerSpy`, request matching, ...).
+
+
+## Comparison
+
+### The classic way using standard library
 
 A typical go code would look like this:
 
 ```go
 func performUserCreationRequest(ctx context.Context, userEmail string) (uint64, error) {
-	// serialization of the request content
-	body, err := json.Marshal(&UserCreationRequest{Email: userEmail})
-	if err != nil {
-		return 0, fmt.Errorf("unable to serialize in json: %v", err)
-	}
+  // serialization of the request content
+  body, err := json.Marshal(&UserCreationRequest{Email: userEmail})
+  if err != nil {
+    return 0, fmt.Errorf("unable to serialize in json: %v", err)
+  }
 
-	// create the request using the provided context to respect cancellation or deadlines
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://example.com/users", bytes.NewReader(body))
-	if err != nil {
-		return 0, fmt.Errorf("unable to create the request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+  // create the request using the provided context to respect cancellation or deadlines
+  req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://example.com/users", bytes.NewReader(body))
+  if err != nil {
+      return 0, fmt.Errorf("unable to create the request: %v", err)
+  }
+  req.Header.Set("Content-Type", "application/json")
 
-	// the client used is hardcoded to be http.Default client but in real-life scenario it is probably injected somehow to ease tests
-	client := http.DefaultClient
-	// perform the request
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("unable to perform request: %v", err)
-	}
+  // the client used is hardcoded to be http.Default client but in real-life scenario it is probably injected somehow to ease tests
+  client := http.DefaultClient
+  // perform the request
+  resp, err := client.Do(req)
+  if err != nil {
+    return 0, fmt.Errorf("unable to perform request: %v", err)
+  }
 
-	switch resp.StatusCode {
-	case http.StatusCreated:
-		// will be handled below
-	case http.StatusUnauthorized:
-		return 0, ErrUnauthorizedRequest
-	default:
-		return 0, fmt.Errorf("unhandled http status: %d", resp.StatusCode)
-	}
+  switch resp.StatusCode {
+  case http.StatusCreated:
+    // handled below
+  case http.StatusUnauthorized:
+    return 0, ErrUnauthorizedRequest
+  default:
+    return 0, fmt.Errorf("unhandled http status: %d", resp.StatusCode)
+  }
 
-	// deserialize the response
-	var userCreationResponse UserCreationResponse
-	if err := json.NewDecoder(resp.Body).Decode(&userCreationResponse); err != nil {
-		return 0, fmt.Errorf("unable to deserialize json: %v", err)
-	}
+  // deserialize the response
+  var userCreationResponse UserCreationResponse
+  if err := json.NewDecoder(resp.Body).Decode(&userCreationResponse); err != nil {
+    return 0, fmt.Errorf("unable to deserialize json: %v", err)
+  }
 
-	// return the newly generated user id
-	return userCreationResponse.UserID, nil
+  // return the newly generated user id
+  return userCreationResponse.UserID, nil
 }
 ```
 
-This is straightforward:
-- create the json body
-- create the request (don't forget some useful headers, don't forget the context propagation using NewRequestWithContext)
-- perform the request on the provided http client
-- handle errors (and treat differently authentication related error to return a sentinel error)
-- handle success by parsing the json body
-- return the parsed user id
+This approach is straightforward but verbose:
 
-but as much as this is a lovely and regular go code, this is a lot of code, and it is not perfect
-(testing each branches takes some effort, reviewers has to check the request is created using the WithContext method,
-and check for the right headers, ..., security issues related to not handling huge body by restricting body readers for instance, ...).
+- create the JSON body
+- create the request with proper headers and context propagation
+- perform the request using the HTTP client
+- jandle errors with specific logic for authentication failures
+- parse the JSON response body on success
+- return the parsed user ID
 
-### a developer friendly way
+However, this approach has several drawbacks: extensive boilerplate code, complex testing requirements, manual verification of context usage and headers, and potential security issues like unrestricted response body reading.
 
-Here is the same code using this package:
+### Developer-friendly alternative
+
+The same functionality using httpclient:
 
 ```go
 func performUserCreationRequest(ctx context.Context, userEmail string) (uint64, error) {
-	var resp CreateUserResponse
+  var resp CreateUserResponse
 
-	if err := httpclient.NewRequest(http.MethodPost, "https://example.com/users/").
-		SendJSON(&CreateUserRequest{Email: userEmail}).
-		Do(ctx).
-		ReceiveJSON(http.StatusCreated, &resp).
-		ErrorOnStatus(http.StatusUnauthorized, ErrUnauthorizedRequest).
-		Error(); err != nil {
-		return 0, err
-	}
+  if err := httpclient.NewRequest(http.MethodPost, "https://example.com/users/").
+    SendJSON(&CreateUserRequest{Email: userEmail}).
+    Do(ctx).
+    ReceiveJSON(http.StatusCreated, &resp).
+    ErrorOnStatus(http.StatusUnauthorized, ErrUnauthorizedRequest).
+    Error(); err != nil {
+    return 0, err
+  }
 
-	return resp.UserID, nil
+  return resp.UserID, nil
 }
 ```
 
-which is a lot easier to write, read, and test.
+This approach is significantly more concise, readable, and maintainable.
 
-To go even further, if we write multiple method for the same API, we can create an API object like:
-```go 
+For applications making multiple requests to the same API, create a reusable API object:
+
+```go
 api := httpclient.
-	NewAPI(client, url.URL{
-		Scheme: "https",
-		Host:   "example.com",
-	}).
-	WithResponseHandler(http.StatusUnauthorized, func(rw *http.Response) error {
-		return ErrUnauthorizedRequest
-	})
+  NewAPI(client, url.URL{
+    Scheme: "https",
+    Host:   "example.com",
+  }).
+  WithResponseHandler(http.StatusUnauthorized, func(rw *http.Response) error {
+    return ErrUnauthorizedRequest
+  })
 ```
 
-this object can be configured using a lot of options to define some default behavior for each request,
+This object supports extensive configuration options to define default behavior for all requests:
 
-it can be used like this:
+Usage example:
 
 ```go
 func (api myAPIMethods) performUserCreationRequest(ctx context.Context, userEmail string) (uint64, error) {
-	var resp CreateUserResponse
+  var resp CreateUserResponse
 
-	if err := api.
-		Do(ctx, api.Post("/users/").SendJSON(&CreateUserRequest{Email: userEmail})).
-		ReceiveJSON(http.StatusCreated, &resp).
-		Error(); err != nil {
-		return 0, err
-	}
+  if err := api.
+    Do(ctx, api.Post("/users/").SendJSON(&CreateUserRequest{Email: userEmail})).
+    ReceiveJSON(http.StatusCreated, &resp).
+    Error(); err != nil {
+    return 0, err
+  }
 
-	return resp.UserID, nil
+  return resp.UserID, nil
 }
 ```
 
-which reduce duplication of error handling by setting common handler for common response handler, or by setting common request attributes.
-This is also useful to avoid repeating the API address and to reduce number of test cases.
+This reduces duplication by centralizing error handling and request attributes, eliminates repeated API addresses, and simplifies testing.
 
-## Example 2: a more complex one
+## License
 
-Say we want to perform a **PUT** request to **example.com** on **/users/$userID/email** to update the email of the user identified using its `$userID`,
-with a json body containing an email attribute. This endpoint would return a **204 No Content** if the update was taken into account immediately and in success,
-or a status **202 Accepted** meaning the update was successful but the propagation of this update is yet to be done (the response body would for this case contain an estimated date and time after which the propagation should be done).
-
-### the classic way using standard library
-
-A typical go code would look like this:
-
-```go
-func performUpdateUserEmailRequest(ctx context.Context, userID uint64, userEmail string) (bool, error) {
-	// serialization of the request parameters and content
-	strUserID := strconv.FormatUint(userID, 10)
-
-	body, err := json.Marshal(&UpdateUserEmailRequest{Email: userEmail})
-	if err != nil {
-		return false, fmt.Errorf("unable to serialize in json: %v", err)
-	}
-
-	// create the request using the provided context to respect cancellation or deadlines
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "https://example.com/users/"+strUserID+"/email", bytes.NewReader(body))
-	if err != nil {
-		return false, fmt.Errorf("unable to create the request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// the client used is hardcoded to be http.Default client but in real-life scenario it is probably injected somehow to ease tests
-	client := http.DefaultClient
-	// perform the request
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("unable to perform request: %v", err)
-	}
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return true, nil
-	case http.StatusAccepted:
-		// will be handled below
-	case http.StatusUnauthorized:
-		return false, ErrUnauthorizedRequest
-	default:
-		return false, fmt.Errorf("unhandled http status: %d", resp.StatusCode)
-	}
-
-	// deserialize the 201 response
-	var updateUserEmailResponse UpdateUserEmailResponse
-	if err := json.NewDecoder(resp.Body).Decode(&updateUserEmailResponse); err != nil {
-		return false, fmt.Errorf("unable to deserialize json: %v", err)
-	}
-
-	// return whenever the propagation time is in the future or not
-	return updateUserEmailResponse.PropagationTime.Before(time.Now()), nil
-}
-```
-
-### the same using this package
-
-Here is the same code using the request builder and response handler:
-
-```go
-func performUpdateUserEmailRequest(ctx context.Context, userID uint64, userEmail string) (bool, error) {
-	var resp UpdateUserEmailResponse
-
-	if err := httpclient.NewRequest(http.MethodPut, "http://example.com/users/{userID}/email").
-		PathReplacer("{userID}", strconv.FormatUint(userID, 10)).
-		SendJSON(&UpdateUserEmailRequest{Email: userEmail}).
-		Do(ctx).
-		SuccessOnStatus(http.StatusOK).
-		ReceiveJSON(http.StatusAccepted, &resp).
-		ErrorOnStatus(http.StatusUnauthorized, ErrUnauthorizedRequest).
-		Error(); err != nil {
-		return false, err
-	}
-
-	return resp.PropagationTime.Before(time.Now()), nil
-}
-```
-
-### More ?
-
-More examples on the API object and on how to ease tests can be browsed in `./internal/example` package.
-
-## Contribution
-
-This project is using nix, which mean by using `nix develop` you can have the same development environment than me or GitHub Action.
-It contains everything needed to develop, lint, and test.
-
-You can also use `act` to run the same steps GitHub Action is using during pull requests, but locally.
-
-Feel free to open issues and pull requests!
+This project is licensed under the MIT License - see the LICENSE file for details.

@@ -7,14 +7,9 @@ import (
 	"github.com/krostar/httpclient"
 )
 
-// NewDoerSpy creates a new spy on provided Doer.
-// Spied doer keep track of input and output made on the underlying doer.
-func NewDoerSpy(doer httpclient.Doer) *DoerSpy {
-	return &DoerSpy{doer: doer}
-}
-
-// DoerSpy implements Doer and exposes calls made on the underlying Doer.
-// It is safe to call it concurrently.
+// DoerSpy implements httpclient.Doer and records all calls to the underlying Doer.
+// Useful for verifying specific HTTP requests were made.
+// Safe for concurrent use.
 type DoerSpy struct {
 	doer httpclient.Doer
 
@@ -22,7 +17,15 @@ type DoerSpy struct {
 	calls []DoerSpyRecord
 }
 
-// Do wraps the underlying doer call and keep track of input and outputs.
+// NewDoerSpy creates DoerSpy wrapping the provided Doer.
+// Forwards all requests while recording inputs and outputs for inspection.
+func NewDoerSpy(doer httpclient.Doer) *DoerSpy {
+	return &DoerSpy{doer: doer}
+}
+
+// Do implements httpclient.Doer by forwarding the request to the wrapped Doer
+// and recording both the input request and output response/error for later retrieval.
+// This method is safe for concurrent use.
 func (d *DoerSpy) Do(req *http.Request) (*http.Response, error) {
 	resp, err := d.doer.Do(req)
 	d.m.Lock()
@@ -35,7 +38,10 @@ func (d *DoerSpy) Do(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// Calls returns the list of calls made on the Doer and clears the list.
+// Calls returns a copy of all recorded calls made through this spy and clears
+// the internal call history. Each call returns a fresh slice, making it safe
+// to call concurrently. The returned slice contains calls in the order they
+// were made.
 func (d *DoerSpy) Calls() []DoerSpyRecord {
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -47,7 +53,9 @@ func (d *DoerSpy) Calls() []DoerSpyRecord {
 	return calls
 }
 
-// DoerSpyRecord stores input and outputs of one Doer call.
+// DoerSpyRecord represents a single recorded HTTP request/response interaction.
+// It captures the complete input and output of one call to the Do method,
+// including any error that may have occurred during the request.
 type DoerSpyRecord struct {
 	InputRequest   *http.Request
 	OutputResponse *http.Response

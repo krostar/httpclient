@@ -3,18 +3,20 @@ package example
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
-	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
+	"github.com/krostar/test"
+	"github.com/krostar/test/check"
 
 	"github.com/krostar/httpclient"
 	httpclienttest "github.com/krostar/httpclient/test"
 )
 
-func Test_CreateUser(t *testing.T) {
+func Test_Client_CreateUser(t *testing.T) {
 	srv := httpclienttest.NewServer(func(serverAddress url.URL, serverDoer httpclient.Doer, checkResponseFunc any) error {
 		client, err := New(serverAddress)
 		if err != nil {
@@ -35,7 +37,7 @@ func Test_CreateUser(t *testing.T) {
 			true,
 		)
 
-	for name, test := range map[string]struct {
+	for name, tt := range map[string]struct {
 		write func(rw http.ResponseWriter) error
 		check func(userID UserID, err error) error
 	}{
@@ -44,8 +46,8 @@ func Test_CreateUser(t *testing.T) {
 				return json.NewEncoder(rw).Encode(apiCreateUserResponse{UserID: 42})
 			},
 			check: func(userID UserID, err error) error {
-				assert.Check(t, err)
-				assert.Check(t, userID == UserID(42))
+				test.Require(t, err == nil)
+				test.Assert(t, userID == UserID(42))
 				return nil
 			},
 		},
@@ -55,8 +57,8 @@ func Test_CreateUser(t *testing.T) {
 				return nil
 			},
 			check: func(userID UserID, err error) error {
-				assert.Check(t, cmp.ErrorIs(err, ErrUnauthorized))
-				assert.Check(t, userID == UserID(0))
+				test.Assert(t, err != nil && errors.Is(err, ErrUnauthorized))
+				test.Assert(t, userID == UserID(0))
 				return nil
 			},
 		},
@@ -66,17 +68,19 @@ func Test_CreateUser(t *testing.T) {
 				return nil
 			},
 			check: func(userID UserID, err error) error {
-				assert.Check(t, cmp.ErrorContains(err, "unhandled request status"))
-				assert.Check(t, userID == UserID(0))
+				test.Assert(t, err != nil && strings.Contains(err.Error(), "unhandled status"), err)
+				test.Assert(t, userID == 0)
 				return nil
 			},
 		},
 	} {
-		t.Run(name, func(t *testing.T) { assert.NilError(t, srv.AssertRequest(matcher, test.write, test.check)) })
+		t.Run(name, func(t *testing.T) {
+			test.Assert(t, srv.AssertRequest(matcher, tt.write, tt.check) == nil)
+		})
 	}
 }
 
-func Test_GetUserByID(t *testing.T) {
+func Test_Client_GetUserByID(t *testing.T) {
 	srv := httpclienttest.NewServer(func(serverAddress url.URL, serverDoer httpclient.Doer, checkResponseFunc any) error {
 		client, err := New(serverAddress)
 		if err != nil {
@@ -92,7 +96,7 @@ func Test_GetUserByID(t *testing.T) {
 		Method(http.MethodGet).
 		URLPath("/users/42")
 
-	for name, test := range map[string]struct {
+	for name, tt := range map[string]struct {
 		write func(rw http.ResponseWriter) error
 		check func(user *User, err error) error
 	}{
@@ -101,8 +105,8 @@ func Test_GetUserByID(t *testing.T) {
 				return json.NewEncoder(rw).Encode(apiGetUserByIDResponse{ID: 42, Name: "john.doe"})
 			},
 			check: func(user *User, err error) error {
-				assert.Check(t, err)
-				assert.Check(t, cmp.DeepEqual(user, &User{
+				test.Require(t, err == nil)
+				test.Assert(check.Compare(t, user, &User{
 					ID:   42,
 					Name: "john.doe",
 				}))
@@ -115,8 +119,8 @@ func Test_GetUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(user *User, err error) error {
-				assert.Check(t, cmp.ErrorIs(err, ErrUserNotFound))
-				assert.Check(t, user == nil)
+				test.Assert(t, err != nil && errors.Is(err, ErrUserNotFound))
+				test.Assert(t, user == nil)
 				return nil
 			},
 		},
@@ -126,8 +130,8 @@ func Test_GetUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(user *User, err error) error {
-				assert.Check(t, cmp.ErrorIs(err, ErrUnauthorized))
-				assert.Check(t, user == nil)
+				test.Assert(t, err != nil && errors.Is(err, ErrUnauthorized))
+				test.Assert(t, user == nil)
 				return nil
 			},
 		},
@@ -137,17 +141,17 @@ func Test_GetUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(user *User, err error) error {
-				assert.Check(t, cmp.ErrorContains(err, "unhandled request status"))
-				assert.Check(t, user == nil)
+				test.Assert(t, err != nil && strings.Contains(err.Error(), "unhandled status"))
+				test.Assert(t, user == nil)
 				return nil
 			},
 		},
 	} {
-		t.Run(name, func(t *testing.T) { assert.NilError(t, srv.AssertRequest(matcher, test.write, test.check)) })
+		t.Run(name, func(t *testing.T) { test.Assert(t, srv.AssertRequest(matcher, tt.write, tt.check) == nil) })
 	}
 }
 
-func Test_DeleteUserByID(t *testing.T) {
+func Test_Client_DeleteUserByID(t *testing.T) {
 	srv := httpclienttest.NewServer(func(serverAddress url.URL, serverDoer httpclient.Doer, checkResponseFunc any) error {
 		client, err := New(serverAddress)
 		if err != nil {
@@ -163,7 +167,7 @@ func Test_DeleteUserByID(t *testing.T) {
 		Method(http.MethodDelete).
 		URLPath("/users/42")
 
-	for name, test := range map[string]struct {
+	for name, tt := range map[string]struct {
 		write func(rw http.ResponseWriter) error
 		check func(err error) error
 	}{
@@ -173,7 +177,7 @@ func Test_DeleteUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(err error) error {
-				assert.Check(t, err)
+				test.Require(t, err == nil)
 				return nil
 			},
 		},
@@ -183,7 +187,7 @@ func Test_DeleteUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(err error) error {
-				assert.Check(t, cmp.ErrorIs(err, ErrUserNotFound))
+				test.Assert(t, err != nil && errors.Is(err, ErrUserNotFound))
 				return nil
 			},
 		},
@@ -193,7 +197,7 @@ func Test_DeleteUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(err error) error {
-				assert.Check(t, cmp.ErrorIs(err, ErrUnauthorized))
+				test.Assert(t, err != nil && errors.Is(err, ErrUnauthorized))
 				return nil
 			},
 		},
@@ -203,11 +207,13 @@ func Test_DeleteUserByID(t *testing.T) {
 				return nil
 			},
 			check: func(err error) error {
-				assert.Check(t, cmp.ErrorContains(err, "unhandled request status"))
+				test.Assert(t, err != nil && strings.Contains(err.Error(), "unhandled status"))
 				return nil
 			},
 		},
 	} {
-		t.Run(name, func(t *testing.T) { assert.NilError(t, srv.AssertRequest(matcher, test.write, test.check)) })
+		t.Run(name, func(t *testing.T) {
+			test.Assert(t, srv.AssertRequest(matcher, tt.write, tt.check) == nil)
+		})
 	}
 }

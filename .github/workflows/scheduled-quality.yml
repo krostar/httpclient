@@ -1,0 +1,60 @@
+---
+name: "Scheduled Quality"
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"
+
+  workflow_dispatch:
+    inputs:
+      activity_days_threshold:
+        description: "Days to look back for commit activity"
+        required: false
+        type: "number"
+
+concurrency:
+  group: "${{ github.workflow }}"
+  cancel-in-progress: false
+
+env:
+  GITHUB_COM_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+  ACTIVITY_DAYS_THRESHOLD: "${{ inputs.activity_days_threshold || 30 }}"
+
+permissions:
+  contents: "read"
+
+jobs:
+  get-activity:
+    name: "Check Repository Activity"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 1
+    outputs:
+      have-recent-commits: "${{ steps.get-activity.outputs.have-recent-commits }}"
+    steps:
+      - name: "Get commits activity"
+        id: "get-activity"
+        uses: "actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea" # v7
+        with:
+          script: |
+            const daysThreshold = parseInt(process.env.ACTIVITY_DAYS_THRESHOLD);
+            const checkDate = new Date();
+            checkDate.setDate(checkDate.getDate() - daysThreshold);
+
+            const commits = await github.rest.repos.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              since: checkDate.toISOString(),
+              per_page: 1
+            });
+
+            core.setOutput('have-recent-commits', commits.data.length != 0);
+
+  call-ci-workflow:
+    name: "Call CI workflow"
+    needs: "get-activity"
+    if: "needs.get-activity.outputs.have-recent-commits == 'false'"
+    uses: "./.github/workflows/quality.yml"
+    secrets: "inherit"
+    permissions:
+      actions: "write"
+      contents: "read"

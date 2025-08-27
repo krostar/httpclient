@@ -1,19 +1,16 @@
 {
   inputs = {
-    flake-utils.url = "github:numtide/flake-utils";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    synergy = {
+      url = "github:krostar/synergy";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = {
-    flake-utils,
-    nixpkgs-unstable,
-    ...
-  }:
-    flake-utils.lib.eachDefaultSystem (
-      system: let
-        pkgs = import nixpkgs-unstable {inherit system;};
-      in {
-        devShells.default = import ./shell.nix {inherit pkgs;};
-      }
-    );
+  outputs = {synergy, ...} @ inputs:
+    synergy.lib.mkFlake {
+      inherit inputs;
+      src = ./.nix;
+      eval.synergy.restrictDependenciesUnits.synergy = ["harmony"];
+    };
 }

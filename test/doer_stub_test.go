@@ -1,19 +1,18 @@
 package httpclienttest
 
 import (
-	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
-	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
+	"github.com/krostar/test"
 )
 
 func Test_DoerStub(t *testing.T) {
 	newHTTPRequest := func(t *testing.T, method string) *http.Request {
-		req, err := http.NewRequestWithContext(context.Background(), method, "/", nil)
-		assert.NilError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), method, "/", http.NoBody)
+		test.Require(t, err == nil)
 		return req
 	}
 
@@ -34,44 +33,44 @@ func Test_DoerStub(t *testing.T) {
 			client := NewDoerStub(calls, true)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.Check(t, cmp.ErrorContains(err, "boom"))
-			assert.Check(t, resp.StatusCode == http.StatusTeapot)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "boom"))
+			test.Assert(t, resp.StatusCode == http.StatusTeapot)
 
-			assert.Check(t, len(client.RemainingCalls()) == 0)
+			test.Assert(t, len(client.RemainingCalls()) == 0)
 		})
 
 		t.Run("all calls not made in order", func(t *testing.T) {
 			client := NewDoerStub(calls, true)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.ErrorContains(t, err, "request does not match")
-			assert.Check(t, resp == nil)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "request does not match"))
+			test.Assert(t, resp == nil)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
-			assert.Check(t, len(client.RemainingCalls()) == 1)
+			test.Assert(t, len(client.RemainingCalls()) == 1)
 		})
 
 		t.Run("no remaining calls", func(t *testing.T) {
 			client := NewDoerStub(calls, true)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.Check(t, cmp.ErrorContains(err, "boom"))
-			assert.Check(t, resp.StatusCode == http.StatusTeapot)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "boom"))
+			test.Assert(t, resp.StatusCode == http.StatusTeapot)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.ErrorContains(t, err, "http doer not configured for this call")
-			assert.Check(t, resp == nil)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "http doer not configured for this call"))
+			test.Assert(t, resp == nil)
 		})
 	})
 
@@ -80,44 +79,44 @@ func Test_DoerStub(t *testing.T) {
 			client := NewDoerStub(calls, false)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.Check(t, cmp.ErrorContains(err, "boom"))
-			assert.Check(t, resp.StatusCode == http.StatusTeapot)
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "boom"))
+			test.Require(t, resp.StatusCode == http.StatusTeapot)
 
-			assert.Check(t, len(client.RemainingCalls()) == 0)
+			test.Assert(t, len(client.RemainingCalls()) == 0)
 		})
 
 		t.Run("all calls not made in order", func(t *testing.T) {
 			client := NewDoerStub(calls, false)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.Check(t, cmp.ErrorContains(err, "boom"))
-			assert.Check(t, resp.StatusCode == http.StatusTeapot)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "boom"))
+			test.Assert(t, resp.StatusCode == http.StatusTeapot)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
-			assert.Check(t, len(client.RemainingCalls()) == 0)
+			test.Assert(t, len(client.RemainingCalls()) == 0)
 		})
 
 		t.Run("no remaining calls", func(t *testing.T) {
 			client := NewDoerStub(calls, false)
 
 			resp, err := client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.NilError(t, err)
-			assert.Check(t, resp.StatusCode == http.StatusOK)
+			test.Require(t, err == nil)
+			test.Assert(t, resp.StatusCode == http.StatusOK)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodPost))
-			assert.Check(t, cmp.ErrorContains(err, "boom"))
-			assert.Check(t, resp.StatusCode == http.StatusTeapot)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "boom"))
+			test.Assert(t, resp.StatusCode == http.StatusTeapot)
 
 			resp, err = client.Do(newHTTPRequest(t, http.MethodGet))
-			assert.ErrorContains(t, err, "http doer not configured for this call")
-			assert.Check(t, resp == nil)
+			test.Require(t, err != nil && strings.Contains(err.Error(), "http doer not configured for this call"))
+			test.Assert(t, resp == nil)
 		})
 	})
 }

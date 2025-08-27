@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -13,8 +12,8 @@ import (
 
 	gocmp "github.com/google/go-cmp/cmp"
 	gocmpopts "github.com/google/go-cmp/cmp/cmpopts"
-	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
+	"github.com/krostar/test"
+	"github.com/krostar/test/check"
 )
 
 func Test_ParsePostForm(t *testing.T) {
@@ -23,14 +22,15 @@ func Test_ParsePostForm(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(url.Values{"foo": {"bar"}}.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 		})
 
 		t.Run("ko", func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req := httptest.NewRequest(http.MethodPost, "/", http.NoBody)
 			req.Body = nil
-			assert.ErrorContains(t, ParsePostForm(req), "unable to parse body as form")
+			err := ParsePostForm(req)
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "unable to parse body as form"))
 		})
 	})
 
@@ -39,13 +39,14 @@ func Test_ParsePostForm(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(url.Values{"foo": {"bar"}}.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 		})
 
 		t.Run("ko", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(";;"))
-			assert.ErrorContains(t, ParsePostForm(req), "unable to parse form values from body")
+			err := ParsePostForm(req)
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "unable to parse form values from body"))
 		})
 	})
 
@@ -54,22 +55,22 @@ func Test_ParsePostForm(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(url.Values{"foo": {"bar"}}.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 		})
 
 		t.Run("custom methods", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, "/", strings.NewReader(url.Values{"foo": {"bar"}}.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 
-			assert.NilError(t, ParsePostForm(req))
-			assert.DeepEqual(t, req.PostForm, url.Values{"foo": {"bar"}})
+			test.Assert(t, ParsePostForm(req) == nil)
+			test.Assert(check.Compare(t, req.PostForm, url.Values{"foo": {"bar"}}))
 		})
 	})
 }
@@ -79,14 +80,14 @@ func newHTTPServerForTesting(t *testing.T, handler http.HandlerFunc) (*httptest.
 	t.Cleanup(httpServer.Close)
 
 	httpServerURL, err := url.Parse(httpServer.URL)
-	assert.NilError(t, err)
+	test.Require(t, err == nil)
 
 	return httpServer, *httpServerURL
 }
 
 func newHTTPRequestForTesting(t *testing.T, method, endpoint string, body io.Reader, callbacks ...func(*testing.T, *http.Request)) *http.Request {
-	req, err := http.NewRequestWithContext(context.Background(), method, endpoint, body)
-	assert.NilError(t, err)
+	req, err := http.NewRequestWithContext(t.Context(), method, endpoint, body)
+	test.Require(t, err == nil)
 
 	for _, callback := range callbacks {
 		callback(t, req)
@@ -138,7 +139,7 @@ func compareHTTPRequests(x, y *http.Request) error {
 				case a != nil && b != nil:
 					bodyA, errA := a()
 					bodyB, errB := b()
-					if !(errA == nil && errB == nil) {
+					if errA != nil || errB != nil {
 						return errA == errB
 					}
 
@@ -158,25 +159,8 @@ func compareHTTPRequests(x, y *http.Request) error {
 	); diff != "" {
 		return errors.New(diff)
 	}
+
 	return nil
-}
-
-func compareHTTPRequestFunc(x, y *http.Request) cmp.Comparison {
-	return func() cmp.Result { return cmp.ResultFromError(compareHTTPRequests(x, y)) }
-}
-
-func compareHTTPResponseFunc(x, y *http.Response) cmp.Comparison {
-	return func() cmp.Result {
-		if diff := gocmp.Diff(x, y,
-			gocmp.FilterPath(
-				func(path gocmp.Path) bool { return strings.HasPrefix(path.GoString(), "{*http.Response}.Request") },
-				gocmp.Comparer(func(x, y *http.Request) bool { return compareHTTPRequests(x, y) == nil }),
-			),
-		); diff != "" {
-			return cmp.ResultFailure(diff)
-		}
-		return cmp.ResultSuccess
-	}
 }
 
 type doerSpy struct {
@@ -187,7 +171,6 @@ type doerSpy struct {
 type doerSpyCall struct {
 	req  *http.Request
 	resp *http.Response
-	err  error //nolint: unused // it is not used, but it still makes sens to keep it
 }
 
 func (spy *doerSpy) Do(req *http.Request) (*http.Response, error) {
@@ -201,11 +184,9 @@ func (spy *doerSpy) Do(req *http.Request) (*http.Response, error) {
 	spy.calls = append(spy.calls, struct {
 		req  *http.Request
 		resp *http.Response
-		err  error
 	}{
 		req:  req,
 		resp: resp,
-		err:  err,
 	})
 
 	return resp, err

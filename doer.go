@@ -4,8 +4,9 @@ import (
 	"net/http"
 )
 
-// Doer defines the Do method, implemented by default by http.DefaultClient.
-// Its main usage is to avoid being tightly coupled with http.Client object to allow additional behavior on top of the underlying client.
+// Doer defines interface for executing HTTP requests.
+// Allows httpclient to work with any HTTP client implementation.
+// Standard http.Client implements this interface directly.
 type Doer interface {
 	Do(req *http.Request) (*http.Response, error)
 }

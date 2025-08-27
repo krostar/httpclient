@@ -2,7 +2,6 @@ package httpclienttest
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,24 +9,23 @@ import (
 	"strings"
 	"testing"
 
-	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
+	"github.com/krostar/test"
 )
 
 func Test_RequestMatcherBuilder(t *testing.T) {
 	jsonEncode := func(t *testing.T, dest any) io.Reader {
 		buf := new(bytes.Buffer)
-		assert.Check(t, json.NewEncoder(buf).Encode(dest))
+		test.Assert(t, json.NewEncoder(buf).Encode(dest) == nil)
 		return buf
 	}
 
 	newRequest := func(method, endpoint string, body io.Reader) *http.Request {
-		req, err := http.NewRequestWithContext(context.Background(), method, endpoint, body)
-		assert.NilError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), method, endpoint, body)
+		test.Require(t, err == nil)
 		return req
 	}
 
-	for name, test := range map[string]struct {
+	for name, tt := range map[string]struct {
 		request       func() *http.Request
 		setup         func(*RequestMatcherBuilder)
 		errorContains []string
@@ -244,19 +242,18 @@ func Test_RequestMatcherBuilder(t *testing.T) {
 			errorContains: []string{"json: unknown field"},
 		},
 	} {
-		name, test := name, test
-
 		t.Run(name, func(t *testing.T) {
 			builder := NewRequestMatcherBuilder()
-			test.setup(builder)
+			tt.setup(builder)
 
-			err := builder.MatchRequest(test.request())
+			err := builder.MatchRequest(tt.request())
 
-			for _, contains := range test.errorContains {
-				assert.Check(t, cmp.ErrorContains(err, contains))
+			for _, contains := range tt.errorContains {
+				test.Assert(t, err != nil && strings.Contains(err.Error(), contains))
 			}
-			if test.errorContains == nil {
-				assert.Check(t, err)
+
+			if tt.errorContains == nil {
+				test.Assert(t, err == nil)
 			}
 		})
 	}

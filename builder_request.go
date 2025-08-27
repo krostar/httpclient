@@ -13,7 +13,37 @@ import (
 	"strings"
 )
 
-// NewRequest returns a new request builder.
+// RequestBuilder provides a fluent interface for building HTTP requests.
+// Configure method, URL, headers, body through method chaining.
+//
+// Not thread-safe. Each instance builds and executes a single request.
+type RequestBuilder struct {
+	builderError error
+
+	client Doer
+	method string
+	url    url.URL
+	header http.Header
+
+	body          io.Reader
+	bodyToMarshal any
+	bodyMarshaler func(any) ([]byte, error)
+
+	overrideFunc RequestOverrideFunc
+}
+
+// RequestOverrideFunc modifies an http.Request just before execution.
+// Useful for authentication, signatures, or dynamic headers.
+//
+// Returns modified request and error. Errors cause request failure.
+type RequestOverrideFunc func(req *http.Request) (*http.Request, error)
+
+// NewRequest creates a RequestBuilder for the HTTP method and endpoint URL.
+//
+// Method should be valid (GET, POST, PUT, DELETE, etc.).
+// Endpoint should be complete URL (containing scheme, host, endpoint, ...).
+//
+// Parse errors are captured and returned when Request() or Do() is called.
 func NewRequest(method, endpoint string) *RequestBuilder {
 	builder := &RequestBuilder{
 		client: http.DefaultClient,
@@ -31,40 +61,28 @@ func NewRequest(method, endpoint string) *RequestBuilder {
 	return builder
 }
 
-// RequestBuilder stores the different attributes set by the builder methods.
-type RequestBuilder struct {
-	builderError error
-
-	client Doer
-	method string
-	url    url.URL
-	header http.Header
-
-	body          io.Reader
-	bodyToMarshal any
-	bodyMarshaler func(any) ([]byte, error)
-
-	overrideFunc RequestOverrideFunc
-}
-
-// RequestOverrideFunc defines the signature to override a request.
-type RequestOverrideFunc func(req *http.Request) (*http.Request, error)
-
-// Client overrides the default http client with the provided one.
+// Client sets the HTTP client for request execution.
+// Must implement Doer interface (http.Client does).
+// Defaults to http.DefaultClient. Allows custom clients with timeouts, transports.
 func (b *RequestBuilder) Client(client Doer) *RequestBuilder {
 	b.client = client
 	return b
 }
 
-// SetHeader replaces the value of the request header with the provided value.
+// SetHeader sets HTTP header values, replacing existing ones.
+// Header names are canonicalized.
 func (b *RequestBuilder) SetHeader(key, value string, values ...string) *RequestBuilder {
 	key = textproto.CanonicalMIMEHeaderKey(key)
+
 	b.header[key] = append([]string{value}, values...)
+
 	return b
 }
 
-// SetHeaders replaces the value of the request with the provided value.
-// It does not replace all the request header with provided headers (it is equivalent of calling SetHeader for each provided headers).
+// SetHeaders merges multiple headers, replacing existing values for same keys.
+// Other headers remain unchanged.
+//
+// Equivalent to calling SetHeader for each provided header.
 func (b *RequestBuilder) SetHeaders(header http.Header) *RequestBuilder {
 	for key, values := range header {
 		b.header[key] = values
@@ -72,14 +90,17 @@ func (b *RequestBuilder) SetHeaders(header http.Header) *RequestBuilder {
 	return b
 }
 
-// AddHeader appends the provided value to the provided header.
+// AddHeader appends values to header, preserving existing ones.
+// Header names are canonicalized.
+// Creates header if missing, appends if exists.
 func (b *RequestBuilder) AddHeader(key, value string, values ...string) *RequestBuilder {
 	key = textproto.CanonicalMIMEHeaderKey(key)
 	b.header[key] = append(b.header[key], append([]string{value}, values...)...)
 	return b
 }
 
-// AddHeaders appends the provided value to the provided header.
+// AddHeaders appends all provided header values to existing ones.
+// Use SetHeaders() to replace entirely.
 func (b *RequestBuilder) AddHeaders(header http.Header) *RequestBuilder {
 	for key, values := range header {
 		b.header[key] = append(b.header[key], values...)
@@ -87,16 +108,18 @@ func (b *RequestBuilder) AddHeaders(header http.Header) *RequestBuilder {
 	return b
 }
 
-// SetQueryParam replaces the provided value to the provided query parameter.
+// SetQueryParam sets query parameter values, replacing existing ones.
+// Multiple values can be provided for the same parameter.
 func (b *RequestBuilder) SetQueryParam(key, value string, values ...string) *RequestBuilder {
 	query := b.url.Query()
+
 	query[key] = append([]string{value}, values...)
 	b.url.RawQuery = query.Encode()
 	return b
 }
 
-// SetQueryParams replaces the provided value to the provided query parameters.
-// It does not replace all the request query parameters with provided query parameters (it is equivalent of calling SetQueryParam for each provided query parameter).
+// SetQueryParams merges query parameters, replacing existing ones.
+// Does not append; replaces entirely.
 func (b *RequestBuilder) SetQueryParams(params url.Values) *RequestBuilder {
 	query := b.url.Query()
 	for key, values := range params {
@@ -107,7 +130,8 @@ func (b *RequestBuilder) SetQueryParams(params url.Values) *RequestBuilder {
 	return b
 }
 
-// AddQueryParam sets / appends the provided value to the provided query parameter.
+// AddQueryParam appends values to query parameter, preserving existing ones.
+// Creates parameter if missing, appends if exists.
 func (b *RequestBuilder) AddQueryParam(key, value string, values ...string) *RequestBuilder {
 	query := b.url.Query()
 	for _, value := range append([]string{value}, values...) {
@@ -118,7 +142,8 @@ func (b *RequestBuilder) AddQueryParam(key, value string, values ...string) *Req
 	return b
 }
 
-// AddQueryParams sets / appends the provided value to the provided query parameters.
+// AddQueryParams appends all provided parameter values to existing ones.
+// Use SetQueryParams() to replace entirely.
 func (b *RequestBuilder) AddQueryParams(params url.Values) *RequestBuilder {
 	query := b.url.Query()
 
@@ -132,22 +157,28 @@ func (b *RequestBuilder) AddQueryParams(params url.Values) *RequestBuilder {
 	return b
 }
 
-// PathReplacer replaces any matching occurrences of the provided pattern inside the url path, with the provided replacement.
-// It is useful to keep the url provided to NewRequest readable and searchable.
-// Example: NewRequest("PUT", "/users/{userID}/email").PathReplacer({"{userID}", userID).
+// PathReplacer replaces pattern occurrences in URL path with replacement.
+// Keeps URLs readable and searchable.
+// Example: NewRequest("PUT", "/users/{userID}/email").PathReplacer("{userID}", userID).
 func (b *RequestBuilder) PathReplacer(pattern, replaceWith string) *RequestBuilder {
 	b.url.Path = strings.ReplaceAll(b.url.Path, pattern, replaceWith)
 	return b
 }
 
-// SendForm sets the provided values as url-encoded form values to the request body, with Content-Type header.
+// SendForm sets request body to form values as application/x-www-form-urlencoded.
+// Sets appropriate Content-Type header.
+//
+// Used for HTML forms and form-encoded API endpoints.
 func (b *RequestBuilder) SendForm(values url.Values) *RequestBuilder {
 	b.body = strings.NewReader(values.Encode())
 	b.SetHeader("Content-Type", "application/x-www-form-urlencoded")
 	return b
 }
 
-// SendJSON sets the provided object, marshaled in JSON, to the request body, with Content-Type header.
+// SendJSON sets object as JSON request body and Content-Type header.
+//
+// Marshaling is lazy - happens during execution, not when called.
+// Object must be JSON-serializable. Marshal errors are returned during execution.
 func (b *RequestBuilder) SendJSON(obj any) *RequestBuilder {
 	b.bodyToMarshal = obj
 	b.bodyMarshaler = json.Marshal
@@ -155,20 +186,24 @@ func (b *RequestBuilder) SendJSON(obj any) *RequestBuilder {
 	return b
 }
 
-// Send sets the provided body to be used as the request body, with Content-Type octet-stream.
+// Send sets io.Reader as request body with Content-Type: application/octet-stream.
+//
+// Useful for binary data, file uploads, or custom content.
 func (b *RequestBuilder) Send(body io.Reader) *RequestBuilder {
 	b.body = body
 	b.SetHeader("Content-Type", "application/octet-stream")
 	return b
 }
 
-// SetOverrideFunc sets a function to be called that allow the request to be overridden.
+// SetOverrideFunc sets function called before request execution.
+// Receives built request, returns modified request and error.
+// Useful for authentication, signing, dynamic modifications.
 func (b *RequestBuilder) SetOverrideFunc(overrideFunc RequestOverrideFunc) *RequestBuilder {
 	b.overrideFunc = overrideFunc
 	return b
 }
 
-// Request builds the request.
+// Request builds and returns the http.Request.
 func (b *RequestBuilder) Request(ctx context.Context) (*http.Request, error) {
 	if b.builderError != nil {
 		return nil, b.builderError
@@ -209,7 +244,7 @@ func (b *RequestBuilder) Request(ctx context.Context) (*http.Request, error) {
 	return req, nil
 }
 
-// Do builds the request using Request(), executes it and returns a builder to handle the response.
+// Do builds, executes request and returns ResponseBuilder.
 func (b *RequestBuilder) Do(ctx context.Context) *ResponseBuilder {
 	responseBuilder := newResponse()
 
@@ -226,5 +261,6 @@ func (b *RequestBuilder) Do(ctx context.Context) *ResponseBuilder {
 	}
 
 	responseBuilder.resp = resp
+
 	return responseBuilder
 }

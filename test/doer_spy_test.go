@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	gocmp "github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
-	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
+	gocmpopts "github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/krostar/test"
+	"github.com/krostar/test/check"
 )
 
 func Test_DoerSpy(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusTeapot)
 	}))
 	defer srv.Close()
@@ -23,8 +23,8 @@ func Test_DoerSpy(t *testing.T) {
 	var calls []DoerSpyRecord
 
 	{ // first call
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/foo", nil)
-		assert.NilError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/foo", http.NoBody)
+		test.Assert(t, err == nil)
 
 		resp, err := spiedClient.Do(req)
 		defer func() { _ = resp.Body.Close() }()
@@ -37,8 +37,8 @@ func Test_DoerSpy(t *testing.T) {
 	}
 
 	{ // second call
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/bar", nil)
-		assert.NilError(t, err)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/bar", http.NoBody)
+		test.Assert(t, err == nil)
 
 		resp, err := spiedClient.Do(req)
 		defer func() { _ = resp.Body.Close() }()
@@ -50,9 +50,13 @@ func Test_DoerSpy(t *testing.T) {
 		})
 	}
 
-	assert.Check(t, cmp.DeepEqual(spiedClient.Calls(), calls,
+	test.Assert(check.Compare(t, spiedClient.Calls(), calls,
 		gocmp.AllowUnexported(http.Request{}),
-		cmpopts.EquateErrors(),
+		gocmp.FilterValues(
+			func(_, _ context.Context) bool { return true },
+			gocmp.Ignore(),
+		),
+		gocmpopts.EquateErrors(),
 	))
-	assert.Check(t, len(spiedClient.Calls()) == 0)
+	test.Assert(t, len(spiedClient.Calls()) == 0)
 }

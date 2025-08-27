@@ -1,21 +1,21 @@
 package httpclienttest
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
-	"gotest.tools/v3/assert"
+	"github.com/krostar/test"
 
 	"github.com/krostar/httpclient"
 )
 
-func Test_TestingServer(t *testing.T) {
+func Test_Server(t *testing.T) {
 	createSomething := func(doer httpclient.Doer, u url.URL) (uint, error) {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, u.String()+"/foo", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, u.String()+"/foo", http.NoBody)
 		if err != nil {
 			return 0, fmt.Errorf("unable to create request: %v", err)
 		}
@@ -24,6 +24,7 @@ func Test_TestingServer(t *testing.T) {
 		if err != nil {
 			return 0, fmt.Errorf("unable to perform request: %v", err)
 		}
+
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusTeapot {
@@ -35,8 +36,9 @@ func Test_TestingServer(t *testing.T) {
 
 	srv := NewServer(func(u url.URL, doer httpclient.Doer, checkResponse any) error {
 		if checkResponse == nil {
-			return fmt.Errorf("boom")
+			return errors.New("boom")
 		}
+
 		id, err := createSomething(doer, u)
 		checkResponse.(func(uint, error))(id, err)
 		return nil
@@ -48,7 +50,7 @@ func Test_TestingServer(t *testing.T) {
 			calledCheckResponse uint
 		)
 
-		assert.NilError(t, srv.AssertRequest(
+		test.Assert(t, srv.AssertRequest(
 			NewRequestMatcherBuilder().URLPath("/foo"),
 			func(rw http.ResponseWriter) error {
 				calledWriteResponse++
@@ -57,38 +59,33 @@ func Test_TestingServer(t *testing.T) {
 			},
 			func(id uint, err error) {
 				calledCheckResponse++
-				assert.Check(t, id == 42)
-				assert.Check(t, err == nil)
-			}),
+				test.Assert(t, id == 42)
+				test.Require(t, err == nil)
+			}) == nil,
 		)
-		assert.Check(t, calledWriteResponse == 1)
-		assert.Check(t, calledCheckResponse == 1)
+		test.Assert(t, calledWriteResponse == 1)
+		test.Assert(t, calledCheckResponse == 1)
 	})
 
 	t.Run("ko", func(t *testing.T) {
 		t.Run("unable to create doer", func(t *testing.T) {
-			assert.ErrorContains(t,
-				srv.AssertRequest(nil, nil, nil),
-				"doer execution failed: boom",
-			)
+			err := srv.AssertRequest(nil, nil, nil)
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "doer execution failed: boom"))
 		})
 
 		t.Run("request does not match", func(t *testing.T) {
-			assert.ErrorContains(t,
-				srv.AssertRequest(NewRequestMatcherBuilder().URLPath("/notfoo"), nil, func(uint, error) {}),
-				"request does not match",
-			)
+			err := srv.AssertRequest(NewRequestMatcherBuilder().URLPath("/notfoo"), nil, func(uint, error) {})
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "request does not match"))
 		})
 
 		t.Run("unable to write response", func(t *testing.T) {
-			assert.ErrorContains(t, srv.AssertRequest(
+			err := srv.AssertRequest(
 				NewRequestMatcherBuilder().URLPath("/foo"),
 				func(http.ResponseWriter) error {
 					return errors.New("boom")
 				},
-				func(uint, error) {}),
-				"unable to write response: boom",
-			)
+				func(uint, error) {})
+			test.Assert(t, err != nil && strings.Contains(err.Error(), "unable to write response: boom"))
 		})
 	})
 }

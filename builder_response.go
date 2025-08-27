@@ -9,13 +9,10 @@ import (
 )
 
 type (
-	// ResponseStatusHandlers maps response http status to response handler.
-	ResponseStatusHandlers map[int]ResponseHandler
-
-	// ResponseHandler defines the signature of the function called to handle a response.
-	ResponseHandler func(*http.Response) error
-
-	// ResponseBuilder stores the different attributes set by the builder methods.
+	// ResponseBuilder provides fluent interface for handling HTTP responses.
+	// Define status code processing, parse bodies, apply security constraints.
+	//
+	// Not thread-safe. Each instance handles a single response.
 	ResponseBuilder struct {
 		builderError error
 
@@ -23,28 +20,41 @@ type (
 		bodySizeReadLimit int64
 		statusHandler     ResponseStatusHandlers
 	}
+
+	// ResponseStatusHandlers maps status codes to response handlers.
+	ResponseStatusHandlers map[int]ResponseHandler
+
+	// ResponseHandler handles HTTP responses for specific status codes.
+	ResponseHandler func(*http.Response) error
 )
 
 func newResponse() *ResponseBuilder {
 	return &ResponseBuilder{statusHandler: make(ResponseStatusHandlers)}
 }
 
-// BodySizeReadLimit limits the maximum amount of octets to be read in the response.
-// Server responses will be considered invalid if the read limit is less than the response content-length.
-// Zero value is equivalent of setting bodySizeReadLimit = resp.ContentLength.
-// Negative value disables checks and limitations.
+// BodySizeReadLimit sets maximum bytes to read from response body.
+// Security feature preventing memory exhaustion attacks.
+//
+// Behavior:
+//   - Positive: Max bytes. Larger Content-Length fails immediately.
+//   - Zero: Uses Content-Length as limit.
+//   - Negative: Disables limit (use with caution).
+//
+// Without Content-Length header, reading stops at limit.
 func (b *ResponseBuilder) BodySizeReadLimit(bodySizeReadLimit int64) *ResponseBuilder {
 	b.bodySizeReadLimit = bodySizeReadLimit
 	return b
 }
 
-// OnStatus sets the provided handler to be called if the response http status is the provided status.
+// OnStatus sets custom handler for specific HTTP status code.
+// Handler called when response matches status.
 func (b *ResponseBuilder) OnStatus(status int, handler ResponseHandler) *ResponseBuilder {
 	b.statusHandler[status] = handler
 	return b
 }
 
-// OnStatuses sets the provided handler to be called if the response http status is any of the provided statuses.
+// OnStatuses sets single handler for multiple status codes.
+// Convenience method for shared handling logic.
 func (b *ResponseBuilder) OnStatuses(statuses []int, handler ResponseHandler) *ResponseBuilder {
 	for _, status := range statuses {
 		b.OnStatus(status, handler)
@@ -52,17 +62,24 @@ func (b *ResponseBuilder) OnStatuses(statuses []int, handler ResponseHandler) *R
 	return b
 }
 
-// SuccessOnStatus sets the provided statuses handler to return no errors if the response http status is the provided statuses.
+// SuccessOnStatus marks status codes as successful (no error).
+// Convenience method for success codes without special processing.
+//
+// Equivalent to OnStatus with handler returning nil.
 func (b *ResponseBuilder) SuccessOnStatus(statuses ...int) *ResponseBuilder {
 	return b.OnStatuses(statuses, func(*http.Response) error { return nil })
 }
 
-// ErrorOnStatus sets the provided err to be returned if the response http status is the provided status.
+// ErrorOnStatus sets error for specific status code.
+// Useful for mapping status codes to domain-specific sentinel errors.
 func (b *ResponseBuilder) ErrorOnStatus(status int, err error) *ResponseBuilder {
 	return b.OnStatus(status, func(*http.Response) error { return err })
 }
 
-// ReceiveJSON parses the response body as JSON (without caring about ContentType header), and sets the result in the provided destination.
+// ReceiveJSON parses response body as JSON for specified status code.
+// Stores result in provided destination.
+//
+// Does not validate Content-Type header. Destination must be pointer.
 func (b *ResponseBuilder) ReceiveJSON(status int, dest any) *ResponseBuilder {
 	return b.OnStatus(status, func(resp *http.Response) error {
 		if err := json.NewDecoder(resp.Body).Decode(&dest); err != nil {
@@ -72,7 +89,14 @@ func (b *ResponseBuilder) ReceiveJSON(status int, dest any) *ResponseBuilder {
 	})
 }
 
-// Error applies all the configured attributes on the request's response.
+// Error processes response with configured handlers and returns any error.
+//
+// Call last in chain to finalize processing:
+//  1. Apply body size limits
+//  2. Call status handler
+//  3. Return error if no handler configured
+//
+// Unhandled status codes return error with request details and base64 body.
 func (b *ResponseBuilder) Error() error {
 	if b.resp != nil && b.resp.Body != nil {
 		body := b.resp.Body
@@ -107,9 +131,12 @@ func (b *ResponseBuilder) Error() error {
 	if body, _ := io.ReadAll(b.resp.Body); len(body) > 0 {
 		errSuffix += " with b64 body " + base64.StdEncoding.EncodeToString(body)
 	}
-	return fmt.Errorf("%s: unhandled request status%s", b.formatResponseError(b.resp), errSuffix)
+
+	return fmt.Errorf("%s: unhandled status%s", b.formatResponseError(b.resp), errSuffix)
 }
 
+// formatResponseError creates standardized error message.
+// Includes method, URL, and status code for context.
 func (*ResponseBuilder) formatResponseError(resp *http.Response) string {
 	return fmt.Sprintf("request %s %s failed with status %d", resp.Request.Method, resp.Request.URL.String(), resp.StatusCode)
 }

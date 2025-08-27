@@ -3,34 +3,42 @@ package httpclienttest
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 
 	gocmp "github.com/google/go-cmp/cmp"
-	"go.uber.org/multierr"
-	"golang.org/x/exp/slices"
 
 	"github.com/krostar/httpclient"
 )
 
-// RequestMatcher defines a way to check whenever a request match against some pre-defined rules.
+// RequestMatcher defines an interface for validating HTTP requests against predefined criteria.
+// Implementations should return nil if the request matches all expected conditions,
+// or a descriptive error if any condition fails. This interface is commonly used
+// with DoerStub to ensure that stubbed responses are only returned for expected requests.
 type RequestMatcher interface {
 	MatchRequest(req *http.Request) error
 }
 
-// RequestMatcherBuilder stores assertions and implements RequestMatcher.
+// RequestMatcherBuilder provides a fluent interface for building complex HTTP request
+// assertions. It implements the RequestMatcher interface and allows chaining multiple
+// validation criteria such as HTTP method, URL components, headers, and body content.
+// Each method adds a new assertion that will be checked when MatchRequest is called.
 type RequestMatcherBuilder struct {
 	assertions []func(*http.Request) error
 }
 
-// NewRequestMatcherBuilder creates a new empty RequestMatcherBuilder.
+// NewRequestMatcherBuilder creates a new empty RequestMatcherBuilder with no assertions.
+// Use the builder's methods to add specific validation criteria for HTTP requests.
 func NewRequestMatcherBuilder() *RequestMatcherBuilder {
 	return new(RequestMatcherBuilder)
 }
 
-// Method asserts that the provided method matches request.Method.
+// Method adds an assertion that the HTTP request method must exactly match the provided method.
+// The comparison is case-sensitive (e.g., "GET", "POST", "PUT").
 func (b *RequestMatcherBuilder) Method(method string) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		if req.Method != method {
@@ -38,10 +46,12 @@ func (b *RequestMatcherBuilder) Method(method string) *RequestMatcherBuilder {
 		}
 		return nil
 	})
+
 	return b
 }
 
-// URLHost asserts that the provided host matches request.URL.Host.
+// URLHost adds an assertion that the request URL's host component must exactly match
+// the provided host string. This includes the hostname and optional port (e.g., "example.com:8080").
 func (b *RequestMatcherBuilder) URLHost(host string) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		if req.URL.Host != host {
@@ -49,10 +59,12 @@ func (b *RequestMatcherBuilder) URLHost(host string) *RequestMatcherBuilder {
 		}
 		return nil
 	})
+
 	return b
 }
 
-// URLPath asserts that the provided path matches request.URL.Path.
+// URLPath adds an assertion that the request URL's path component must exactly match
+// the provided path string. The path should include the leading slash (e.g., "/api/users").
 func (b *RequestMatcherBuilder) URLPath(path string) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		if req.URL.Path != path {
@@ -60,10 +72,13 @@ func (b *RequestMatcherBuilder) URLPath(path string) *RequestMatcherBuilder {
 		}
 		return nil
 	})
+
 	return b
 }
 
-// URLQueryParamsContains asserts that the provided url values are contained in request.URL.Query().
+// URLQueryParamsContains adds an assertion that the request URL's query parameters
+// must contain all the provided key-value pairs. Additional query parameters in the
+// request are allowed. The values for each key must match exactly, including order.
 func (b *RequestMatcherBuilder) URLQueryParamsContains(params url.Values) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		reqQueryParams := req.URL.Query()
@@ -83,12 +98,15 @@ func (b *RequestMatcherBuilder) URLQueryParamsContains(params url.Values) *Reque
 			}
 		}
 
-		return multierr.Combine(errs...)
+		return errors.Join(errs...)
 	})
+
 	return b
 }
 
-// HeadersContains asserts that the provided headers are contained in request.Header.
+// HeadersContains adds an assertion that the request headers must contain all the
+// provided header key-value pairs. Additional headers in the request are allowed.
+// Header names are case-insensitive, but values must match exactly including order.
 func (b *RequestMatcherBuilder) HeadersContains(headers http.Header) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		reqHeaders := req.Header
@@ -108,13 +126,16 @@ func (b *RequestMatcherBuilder) HeadersContains(headers http.Header) *RequestMat
 			}
 		}
 
-		return multierr.Combine(errs...)
+		return errors.Join(errs...)
 	})
+
 	return b
 }
 
-// BodyForm asserts that the provided url values are contained in request.PostForm.
-// Strict parameters define whenever the request.PostForm should be exactly the provided url values or more values can exists.
+// BodyForm adds an assertion that the request body contains form data matching the
+// provided url.Values. The request's Content-Type should be "application/x-www-form-urlencoded".
+// If strict is true, the form data must match exactly with no additional fields.
+// If strict is false, additional fields in the request are allowed.
 func (b *RequestMatcherBuilder) BodyForm(compareWith url.Values, strict bool) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		if err := httpclient.ParsePostForm(req); err != nil {
@@ -149,13 +170,17 @@ func (b *RequestMatcherBuilder) BodyForm(compareWith url.Values, strict bool) *R
 			}
 		}
 
-		return multierr.Combine(errs...)
+		return errors.Join(errs...)
 	})
+
 	return b
 }
 
-// BodyJSON asserts that request's body is a JSON can be bound to getDest()'s output and is the same as compareWith.
-// Strict parameters define whenever the body can contain unknown fields.
+// BodyJSON adds an assertion that the request body contains JSON data that can be
+// unmarshalled into the type returned by getDest() and matches compareWith exactly.
+// The getDest function should return a new instance of the expected type for unmarshalling.
+// If strict is true, the JSON must not contain any fields not present in the target type.
+// If strict is false, additional JSON fields are ignored during unmarshalling.
 func (b *RequestMatcherBuilder) BodyJSON(compareWith any, getDest func() any, strict bool) *RequestMatcherBuilder {
 	b.assertions = append(b.assertions, func(req *http.Request) error {
 		buf := new(bytes.Buffer)
@@ -178,14 +203,17 @@ func (b *RequestMatcherBuilder) BodyJSON(compareWith any, getDest func() any, st
 
 		return nil
 	})
+
 	return b
 }
 
-// MatchRequest implements RequestMatcher and asserts all built assertions.
+// MatchRequest implements the RequestMatcher interface by running all configured
+// assertions against the provided HTTP request. It returns nil if all assertions
+// pass, or a combined error containing details of all failed assertions.
 func (b *RequestMatcherBuilder) MatchRequest(req *http.Request) error {
 	var errs []error
 	for _, assertion := range b.assertions {
 		errs = append(errs, assertion(req))
 	}
-	return multierr.Combine(errs...)
+	return errors.Join(errs...)
 }
